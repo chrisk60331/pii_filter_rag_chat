@@ -1,0 +1,55 @@
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.96.2 # Get the latest from: https://github.com/antonbabenko/pre-commit-terraform/releases
+    hooks:
+      - id: terraform_tflint
+        args:
+          - '--args=--disable-rule=terraform_typed_variables'
+          - '--args=--disable-rule=terraform_required_providers'
+          - '--args=--disable-rule=terraform_unused_declarations'
+          - '--args=--disable-rule=terraform_required_version'
+      - id: terraform_fmt
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0  # Use the latest stable version or pin to a specific version.
+    hooks:
+      - id: black
+        args: [--check, --diff, -l79]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: ""
+    hooks:
+    -   id: mypy
+        args: ["--strict", "--ignore-missing-imports", "--config-file", "mypy.ini"]
+
+  - repo: https://github.com/pre-commit/mirrors-isort
+    rev: v5.10.1  # Use the latest stable version or pin to a specific version.
+    hooks:
+      - id: isort
+        args: [--check, --diff, -l79, --profile, black]
+
+  - repo: local
+    hooks:
+      - id: pylama
+        name: pylama
+        entry: pylama
+        language: system
+        types: [python]
+      - id: pytest
+        name: pytest
+        entry: bash -c 'PYTHONPATH=. pytest tests/unit_tests.py'
+        language: system
+        types: [ python ]
+        pass_filenames: false
+      - id: hadolint-docker
+        name: Lint Dockerfiles
+        description: Runs hadolint Docker image to lint Dockerfiles
+        language: docker_image
+        types: [ "dockerfile" ]
+        entry: ghcr.io/hadolint/hadolint hadolint
+      - id: hadolint
+        name: Lint Dockerfiles
+        description: Runs hadolint to lint Dockerfiles
+        language: system
+        types: [ "dockerfile" ]
+        entry: hadolint

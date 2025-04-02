@@ -1,0 +1,14 @@
+.DS_Store
+.idea
+ExampleCapture
+__pycache__
+temp-images*
+temp-metadata*
+terraform/**/.terraform.lock.hcl
+terraform/**/.terraform/
+terraform/**/out.plan
+terraform/**/terraform.tfstate
+terraform/**/terraform.tfstate.backup
+.coverage
+.venv/
+
