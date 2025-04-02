@@ -6,7 +6,7 @@ import dotenv
 from opensearchpy import OpenSearch, RequestsHttpConnection
 
 from aws_rag_quickstart.AWSAuth import get_aws_auth
-from aws_rag_quickstart.constants import OS_HOST, OS_INDEX_NAME, OS_PORT
+
 from aws_rag_quickstart.LLM import Embeddings
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -15,7 +15,7 @@ if int(os.getenv("LOCAL", "0")):
     dotenv.load_dotenv()
 
 
-def get_opensearch_connection(host: str = OS_HOST, port: int = OS_PORT) -> OpenSearch:
+def get_opensearch_connection(host: str = os.getenv("AOSS_HOST"), port: int = os.getenv("AOSS_PORT")) -> OpenSearch:
     """
     Create a connection to the OpenSearch cluster.
     """
@@ -50,7 +50,7 @@ def is_opensearch_connected(client: OpenSearch) -> bool:
 
 
 def create_index_opensearch(
-    client: OpenSearch, embeddings: Any, index_name: str = OS_INDEX_NAME
+    client: OpenSearch, embeddings: Any, index_name: str = os.getenv("INDEX_NAME")
 ) -> None:
     """
     Create a new index in OpenSearch.

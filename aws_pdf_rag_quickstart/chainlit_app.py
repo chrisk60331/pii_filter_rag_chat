@@ -9,12 +9,13 @@ from typing import Dict, List
 import uuid
 
 import chainlit as cl
-import boto3
+from chainlit.input_widget import Select
 
 from aws_rag_quickstart.AgentLambda import main as agent_handler
 from aws_rag_quickstart.IngestionLambda import main as ingest_handler
-from aws_rag_quickstart.opensearch import delete_doc
 from aws_rag_quickstart.pii_detector import PIIDetector
+from aws_rag_quickstart.bedrock_llm import BedrockLLM
+from aws_rag_quickstart.constants import ALL_MODELS
 
 # Configure logging
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -30,6 +31,27 @@ user_documents = {}
 IS_LOCAL = bool(int(os.getenv("LOCAL", "0")))
 AWS_PROFILE = os.getenv("AWS_PROFILE", "default")
 
+# Initialize Bedrock client for model listing
+bedrock_client = BedrockLLM() if not IS_LOCAL else None
+
+async def get_available_models() -> List[Dict[str, str]]:
+    """Get list of available Bedrock and OpenAI models"""
+    if IS_LOCAL:
+        return []
+    
+    try:
+        return ALL_MODELS
+    except Exception as e:
+        logger.error(f"Error getting available models: {e}")
+        return []
+
+
+@cl.on_settings_update
+async def on_settings_update(settings):
+    selected_model = settings.get("model")
+    cl.user_session.set("selected_model", selected_model)
+    logger.info(f"Updated model selection: {selected_model}")
+
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -38,13 +60,27 @@ async def on_chat_start():
     
     # Set initial user documents list
     cl.user_session.set("document_ids", [])
-    
     # Send a welcome message
     await cl.Message(
         content="""Welcome to the AWS RAG chatbot with PII protection. 
         You can ask questions about your documents after uploading them using the file attachment button.
         Note: All inputs are screened for PII and will be rejected if detected."""
     ).send()
+
+    models = await get_available_models()
+    initial_index = 12  # Default index
+    # Create model selection dropdown
+    settings = await cl.ChatSettings(
+        [
+            Select(
+                id="model",
+                label="Select Model",
+                values=models,
+                initial_value=models[initial_index],
+            )
+        ]
+    ).send()
+    cl.user_session.set("selected_model", settings["model"])
 
 
 async def process_uploaded_files(files: List[cl.File]):
@@ -105,10 +141,15 @@ async def on_message(message: cl.Message):
     user_input = message.content
     document_ids = cl.user_session.get("document_ids", [])
 
+    models = await get_available_models()
+    logger.info(f"Available models: {models}")
+    
+    selected_model = cl.user_session.get("selected_model", os.getenv("CHAT_MODEL"))
+    logger.info(f"Selected model: {selected_model}"),
+
     if message.elements:
         images = [file for file in message.elements]
         await process_uploaded_files(images)
-        
     
     # Filter for PII in the user input
     is_safe, message_content, detected_entities = pii_detector.filter_text(user_input)
@@ -127,10 +168,12 @@ async def on_message(message: cl.Message):
         thinking_msg = cl.Message(content="Thinking...")
         await thinking_msg.send()
         
+        # Get selected model from session
         # Process the query through the RAG system
         event = {
             "unique_ids": document_ids,  # These are now S3 keys
-            "question": user_input
+            "question": user_input,
+            "model_id": selected_model  # Pass selected model to handler
         }
         
         response = agent_handler(event)

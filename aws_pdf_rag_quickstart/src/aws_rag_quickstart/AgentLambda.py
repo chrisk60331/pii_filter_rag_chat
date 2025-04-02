@@ -10,7 +10,6 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.tools import tool
 
-from aws_rag_quickstart.constants import OS_HOST, OS_INDEX_NAME, OS_PORT
 from aws_rag_quickstart.LLM import ChatLLM, Embeddings
 from aws_rag_quickstart.opensearch import (
     get_opensearch_connection,
@@ -41,12 +40,12 @@ def os_similarity_search(context: Dict[str, Any]) -> Any:
     # Build filter query for the unique IDs
     should_queries = [{"term": {"unique_id": uid}} for uid in unique_ids]
     # Get OpenSearch connection
-    os_client = get_opensearch_connection(OS_HOST, OS_PORT)
+    os_client = get_opensearch_connection(os.getenv("AOSS_HOST"), os.getenv("AOSS_PORT"))
     
     # Use the query_opensearch_with_score function
     results = query_opensearch_with_score(
         client=os_client,
-        index_name=OS_INDEX_NAME,
+        index_name=os.getenv("INDEX_NAME"),
         query_text=question,
         k=100,
     )
@@ -124,15 +123,18 @@ def main(event: Dict[str, Any], *args: Any, **kwargs: Any) -> str:
     """
     Main entry point for the lambda function
     """
-    # Initialize the chat model
-    llm = ChatLLM()
+    # Get model ID from event or use default
+    model_id = event.get("model_id", os.getenv("CHAT_MODEL"))
+    
+    # Initialize the chat model with selected model
+    llm = ChatLLM(model_id=model_id)
     
     # Get query and document IDs from the event
     query = event.get("question", "")
     os_client = get_opensearch_connection()
     search_results = query_opensearch_with_score(
         client=os_client,
-        index_name=OS_INDEX_NAME,
+        index_name=os.getenv("INDEX_NAME"),
         query_text=query,
     )
     

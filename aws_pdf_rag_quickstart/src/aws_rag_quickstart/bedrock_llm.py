@@ -89,7 +89,7 @@ class BedrockLLM:
                 model_kwargs=self.model_kwargs,
                 endpoint_url=self.endpoint_url,
                 streaming=self.streaming,
-                timeout=self.timeout,
+                # timeout=self.timeout,
             )
             logger.info(f"Successfully initialized Bedrock LLM with model {self.model_id}")
         except Exception as e:

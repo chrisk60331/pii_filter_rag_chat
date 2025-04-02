@@ -10,7 +10,6 @@ from langchain.schema import HumanMessage
 from opensearchpy import OpenSearch
 from PyPDF2 import PdfReader
 
-from aws_rag_quickstart.constants import OS_HOST, OS_INDEX_NAME, OS_PORT
 from aws_rag_quickstart.LLM import ChatLLM, Embeddings
 from aws_rag_quickstart.opensearch import (
     create_index_opensearch,
@@ -167,11 +166,11 @@ def main(event: Dict[str, Any], *args: Any, **kwargs: Any) -> int:
     logging.info(f"Starting ingestion process for event: {event}")
     metadata_llm = ChatLLM().llm
     os_embeddings = Embeddings()
-    os_client = get_opensearch_connection(OS_HOST, OS_PORT)
+    os_client = get_opensearch_connection(os.getenv("AOSS_HOST"), os.getenv("AOSS_PORT"))
 
     # create index if it does not exist
-    if not os_client.indices.exists(index=OS_INDEX_NAME):
-        create_index_opensearch(os_client, os_embeddings, OS_INDEX_NAME)
+    if not os_client.indices.exists(index=os.getenv("INDEX_NAME")):
+        create_index_opensearch(os_client, os_embeddings, os.getenv("INDEX_NAME"))
 
     # Add PII statistics tracking to event
     event["pii_stats"] = {"pages_with_pii": 0, "total_pages": 0}
