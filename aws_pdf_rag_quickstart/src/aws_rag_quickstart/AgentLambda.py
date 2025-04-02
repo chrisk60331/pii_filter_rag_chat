@@ -129,24 +129,7 @@ def main(event: Dict[str, Any], *args: Any, **kwargs: Any) -> str:
     
     # Get query and document IDs from the event
     query = event.get("question", "")
-    unique_ids = event.get("unique_ids", [])
-    
-    if not query or not unique_ids:
-        return "Please provide a question and at least one document ID"
-    
-    # Check if any IDs are local file paths
-    local_file_ids = [id for id in unique_ids if os.path.exists(id)]
-    s3_ids = [id for id in unique_ids if id not in local_file_ids]
-    
-    # Log information about the query and documents
-    logging.info(f"Query: {query}")
-    logging.info(f"Document IDs: {unique_ids}")
-    logging.info(f"Local file IDs: {local_file_ids}")
-    logging.info(f"S3 IDs: {s3_ids}")
-    
-    # Get OpenSearch connection
     os_client = get_opensearch_connection()
-    # Query OpenSearch
     search_results = query_opensearch_with_score(
         client=os_client,
         index_name=OS_INDEX_NAME,

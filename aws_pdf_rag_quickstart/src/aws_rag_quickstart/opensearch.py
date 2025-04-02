@@ -9,7 +9,8 @@ from aws_rag_quickstart.AWSAuth import get_aws_auth
 from aws_rag_quickstart.constants import OS_HOST, OS_INDEX_NAME, OS_PORT
 from aws_rag_quickstart.LLM import Embeddings
 
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING"))
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 if int(os.getenv("LOCAL", "0")):
     dotenv.load_dotenv()
 
@@ -172,7 +173,7 @@ def query_opensearch_with_score(
             for key, value in additional_query.items():
                 query["query"]["bool"][key] = value
                 
-        logging.info(f"Executing OpenSearch query: {query}")
+        logger.debug(f"Executing OpenSearch query: {query}")
         
         # Execute search
         response = client.search(index=index_name, body=query)

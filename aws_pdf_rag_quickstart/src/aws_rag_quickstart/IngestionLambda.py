@@ -1,15 +1,13 @@
-import base64
 import logging
 import os
 import time
 from io import BytesIO
 from typing import Any, Dict
+import traceback
 
-import boto3
 import dotenv
 from langchain.schema import HumanMessage
 from opensearchpy import OpenSearch
-from pdf2image import convert_from_bytes
 from PyPDF2 import PdfReader
 
 from aws_rag_quickstart.constants import OS_HOST, OS_INDEX_NAME, OS_PORT
@@ -20,6 +18,11 @@ from aws_rag_quickstart.opensearch import (
     insert_document_opensearch,
 )
 from aws_rag_quickstart.pii_detector import PIIDetector
+
+# Custom exception for PII detection
+class PIIDetectionError(Exception):
+    """Raised when PII is detected in document processing"""
+    pass
 
 logging.basicConfig(level=os.environ["LOG_LEVEL"])
 if int(os.getenv("LOCAL", "0")):
@@ -101,8 +104,6 @@ def process_file(
     use_local_storage = input_dict.get("use_local_storage", False)
     
     logging.info(f"Processing file {file_path} with local_storage={use_local_storage}")
-    start_time = time.time()
-    
     # Initialize PII detector
     pii_detector = PIIDetector()
     
@@ -110,18 +111,9 @@ def process_file(
     pii_stats = input_dict.get("pii_stats", {"pages_with_pii": 0, "total_pages": 0})
     
     try:
-        # Handle local or S3 storage
-        if use_local_storage:
-            logging.info(f"Reading PDF from local storage: {file_path}")
-            with open(file_path, 'rb') as f:
-                pdf_file = f.read()
-        else:
-            logging.info(f"Reading PDF from S3: {file_path}")
-            session = boto3.session.Session()
-            s3 = session.client("s3")
-            pdf_file = s3.get_object(Bucket=os.environ["S3_BUCKET"], Key=file_path)[
-                "Body"
-            ].read()
+        logging.info(f"Reading PDF from local storage: {file_path}")
+        with open(file_path, 'rb') as f:
+            pdf_file = f.read()
         
         logging.info(f"PDF file retrieved, size: {len(pdf_file)} bytes")
         
@@ -132,64 +124,47 @@ def process_file(
 
         i = 0
         for i in range(num_pages):
-            page_start_time = time.time()
             page = pdf_reader.pages[i]
             text_content = page.extract_text()
-            
-            logging.info(f"Processing page {i+1}..")
-            logging.info(f"Page {i+1} extracted text, size: {len(text_content)} bytes")
-            
-            # Update total pages stat
             pii_stats["total_pages"] += 1
             
             # Apply PII filtering to the text content
-            is_safe, filtered_content, detected_entities = pii_detector.filter_text(text_content)
+            is_safe, _, detected_entities = pii_detector.filter_text(text_content)
             
             if not is_safe:
-                # Update pages with PII stat
                 pii_stats["pages_with_pii"] += 1
-                
-                logging.warning(f"PII detected in page {i+1}. Detected entities: {detected_entities}")
-                logging.info("Skipping indexing of page with PII")
-                # Log the detected PII entities
                 pii_warnings = [f"{entity['word']} ({entity['entity_group']})" for entity in detected_entities]
-                logging.info(f"PII found: {', '.join(pii_warnings)}")
+                pii_stats["pii_warnings"] = pii_warnings
+                logging.info(f"Page {i+1} processing stopped due to PII detection")
                 
-                # Skip indexing this page
-                page_elapsed_time = time.time() - page_start_time
-                logging.info(f"Page {i+1} processing stopped due to PII detection in {page_elapsed_time:.2f} seconds")
-                continue
-            
+        if pii_stats["pages_with_pii"] > 0:
+            raise PIIDetectionError(f"PII detected on page {i+1}: {', '.join(pii_warnings)}")
+
+        for i in range(num_pages):
+            text_content = page.extract_text()
+            page = pdf_reader.pages[i]
+            logging.info(f"Page {i+1} extracted text, size: {len(text_content)} bytes")
             metadata = augment_metadata(metadata_llm, text_content, input_dict)
             metadata["page_number"] = f"page_{i+1}"
-            
-            # Add PII detection flag to metadata (should always be false here since we skip pages with PII)
             metadata["contains_pii"] = False
             
             insert_document_opensearch(
                 os_client, os_index_name, os_embeddings, metadata
             )
-            
-            page_elapsed_time = time.time() - page_start_time
-            logging.info(f"Page {i+1} processed and indexed in {page_elapsed_time:.2f} seconds")
-        
+
         # Update the PII stats in the input dict for reporting
         input_dict["pii_stats"] = pii_stats
-            
-        total_elapsed_time = time.time() - start_time
-        logging.info(f"Indexed {num_pages} pages in {total_elapsed_time:.2f} seconds.")
-        return num_pages
+        logging.info(f"Indexed {num_pages} pages.")
+        return num_pages, pii_stats
         
     except Exception as e:
-        elapsed_time = time.time() - start_time
-        logging.error(f"Error processing file {file_path} after {elapsed_time:.2f} seconds: {str(e)}")
+        logging.error(f"Error processing file {file_path}: {str(e)}")
+        traceback.print_exc()
         raise
 
 
 def main(event: Dict[str, Any], *args: Any, **kwargs: Any) -> int:
     logging.info(f"Starting ingestion process for event: {event}")
-    start_time = time.time()
-    
     metadata_llm = ChatLLM().llm
     os_embeddings = Embeddings()
     os_client = get_opensearch_connection(OS_HOST, OS_PORT)
@@ -202,21 +177,14 @@ def main(event: Dict[str, Any], *args: Any, **kwargs: Any) -> int:
     event["pii_stats"] = {"pages_with_pii": 0, "total_pages": 0}
     
     # process input pdf
-    num_pages_processed = process_file(
+    num_pages_processed, pii_stats = process_file(
         event, metadata_llm, os_client, OS_INDEX_NAME, os_embeddings
     )
-    
-    # Log PII statistics
-    pii_stats = event.get("pii_stats", {})
-    if pii_stats.get("total_pages", 0) > 0:
-        pii_percentage = (pii_stats.get("pages_with_pii", 0) / pii_stats.get("total_pages", 0)) * 100
-        logging.info(f"PII detection statistics: {pii_stats.get('pages_with_pii', 0)} of {pii_stats.get('total_pages', 0)} pages had PII ({pii_percentage:.1f}%)")
-    
-    elapsed_time = time.time() - start_time
-    logging.info(f"Ingestion completed: {num_pages_processed} pages processed in {elapsed_time:.2f} seconds")
+
+    logging.info(f"Ingestion completed: {num_pages_processed} pages processed")
 
     # Return both page count and PII stats
     return {
         "num_pages_processed": num_pages_processed,
-        "pii_stats": pii_stats
+        "pii_stats": pii_stats,
     }
