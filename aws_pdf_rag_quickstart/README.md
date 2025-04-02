@@ -1,142 +1,60 @@
-# AWS PDF RAG Quickstart
+# AWS RAG Chatbot with PII Filtering
 
-This project provides a quickstart for building a PDF RAG (Retrieval Augmented Generation) system on AWS.
 
 ## Features
 
-- Extracts text from PDF files for processing
-- Supports both multimodal and text-only LLMs for document processing
-- Indexes document content in OpenSearch for efficient retrieval
-- Provides RAG capabilities through LLM integration
+- Real-time PII detection using Hugging Face NER models
+- Automatic rejection of messages containing PII
+- Support for AWS Bedrock and OpenAI models
+- PDF document ingestion with RAG-based query processing
+- User-friendly Chainlit interface
 
-## Usage
+## Setup and Installation
 
-### Prerequisites
+1. Clone this repository:
 
-- Python 3.8+
-- uv (Python package manager)
 
-### Installation
+2. Set up AWS credentials and configuration:
+   - Configure AWS CLI with `aws configure` or `saml2aws`
+   - Create a `.env` file based on the sample provided
 
-```bash
-uv pip install PyPDF2
+3. Run the Chainlit application using Docker Compose:
+   ```
+   docker-compose up -d --build
+   ```
+
+## Environment Variables
+
+Create a `.env` file with the following variables:
+
+```
+AWS_REGION=us-west-2
+LOCAL=0
+MODEL_TEMP=0.7
+CHAT_MODEL=anthropic.claude-3-sonnet-20240229-v1:0  # For AWS Bedrock
+EMBED_MODEL=amazon.titan-embed-text-v1  # For AWS Bedrock
+BEDROCK_ENDPOINT=https://bedrock-runtime.us-west-2.amazonaws.com
+LOG_LEVEL=INFO
 ```
 
-### Configuration
-
-For multimodal LLMs, the system can process PDF pages as images. For text-only LLMs (like local Llama models), the system extracts text from PDFs using PyPDF2.
-
-## Implementation Notes
-
-The system has been configured to support both text-only and multimodal workflows:
-
-1. **Text-only LLMs**: Uses PyPDF2 to extract text from PDF documents directly.
-2. **Multimodal LLMs**: Can convert PDFs to images and process the visual content.
-
-By default, the system now uses the text extraction approach which works with any LLM, including local non-multimodal models.
-
-# New Math Data AWS GenAI RAG Quick Start
-
-This Quick Start will help you create an end-to-end local development environment to accelerate your AWS RAG development. 
-
-The Quick Start provides functionality for working with unstructured content, such as:
-- Metadata augmentation
-- Metadata storage via OpenSearch
-- Document retrieval via an LLM agent
-
-To make your life easier, the Quick Start includes:
-- A local LLM for rapid prototyping
-- LocalStack for AWS services
-- OpenSearch
-- FastAPI for local E2E functional testing
-- Terraform configurations to deploy a production-ready stack
-**_NOTE:_** the local LLM is small and not multimodal, so it doesn't do well on image Q&A
-
-# AWS RAG Architectural Pattern
-<img src="img/aws_rag.jpg" width="50%"/>
-
-# Local Testing
-<img src="img/ragstart.jpg" width="50%"/>
-
-## Prerequisites
-- Python 3.11 or higher
-- Docker and docker-compose.
-  - Be sure to max out resource allocation in Docker preferences, you'll need it.
-- Homebrew (or your favorite package manager, substitute brew [something] commands as necessary).
-- [uv](https://github.com/astral-sh/uv) for Python package management
-- This repo, cloned locally. Duh.
-
-## Testing
-### Install dependencies
-```bash
-# Install uv if you haven't already
-pip install uv
-
-# Install the package and its dependencies
-uv pip install -e .
-
-# Install development dependencies
-uv install -e ".[dev]"
+For OpenAI models, set the following:
 ```
-[Terraform](https://developer.hashicorp.com/terraform) is required for obvious reasons
-```bash
-brew tap hashicorp/tap
-brew install hashicorp/tap/terraform
+OPENAI_API_KEY=your_api_key_here
 ```
-[TFLint](https://github.com/terraform-linters/tflint) is required for terraform_tflint hook
-```bash
-brew install tflint
-```
-[Hadolint](https://github.com/hadolint/hadolint) is required for hadolint hook
-```bash
-brew install hadolint
-```
-### Run unit tests
-```bash
-python -m pytest tests/unit_tests.py
-```
-### Run coverage
-```bash
-coverage erase && \
-coverage run -m pytest tests/unit_tests.py && \
-coverage report --show-missing
-```
-### Linting
-```bash
-black -l79 src tests
-isort -l79 --profile black src tests
-pylama src tests
-tflint
-terraform fmt
-```
-### Pre-commit
-```bash
-pre-commit install
-pre-commit run --all-files
-```
-### Local Functional Testing Steps
-1. Run:
-```bash
-docker-compose up -d --build 
-```
-2. Navigate to http://0.0.0.0/docs
-3. Test Each interface
 
-<img src="img/fastapi.png" width="30%"/>
+## Running with Different Configurations
 
-### Running with or without Ollama
-
-#### Using AWS Bedrock (Default, without Ollama)
-This runs the application using AWS Bedrock for AI services, without launching the Ollama container:
+### Using AWS Bedrock (Default)
+This runs the application using AWS Bedrock for AI services:
 
 ```bash
 # Make sure .env.bedrock is properly configured
 cp .env.bedrock .env
-# Run without Ollama
+# Run the application
 COMPOSE_PROFILES=default docker-compose up -d --build
 ```
 
-#### Using Ollama (Local LLM)
+### Using Ollama (Local LLM)
 This runs the application with the Ollama local LLM:
 
 ```bash
@@ -146,39 +64,46 @@ cp .env.ollama .env
 COMPOSE_PROFILES=ollama docker-compose up -d --build
 ```
 
-### Index State
-To check the index state:  
-- Navigate to the local OpenSearch dashboard http://localhost:5601/app/home#/  
-- From menu on the left, go to Index management > Indexes
+## PII Detection
 
-# Deploy
-## Credentials
-We use saml2aws
-```bash
-brew install saml2aws
-saml2aws configure 
-saml2aws login 
-```
-## Terraform Remote State
-```bash
-cd terraform/remote_state
-terraform init
-terraform apply
-```
-### Terraform Deploy
-```bash
-cd ../live/dev
-terraform init
-terraform apply --auto-approve
-```
-terraform.tfvars values
-```bash
-account_id="aws_account_id"
-bedrock_image_uri="aws_account_id.dkr.ecr.region_name.amazonaws.com/aws-rag/bedrock:latest"
-opensearch_image_uri="aws_account_id.dkr.ecr.us-east-1.amazonaws.com/aws-rag/opensearch:latest"
-ecs_opensearch_image_uri="aws_account_id.dkr.ecr.region_name.amazonaws.com/aws-rag/ecsopensearch:latest"
-region_name="us-east-1"
-customer="Test" # for tagging
-creator="cking" # for tagging
+The PII detection system uses a Hugging Face Named Entity Recognition (NER) model to identify potentially sensitive information in user messages. By default, it uses the `dslim/bert-base-NER` model, which can detect:
+
+- Person names
+- Organizations
+- Locations
+- Other identifying information
+
+## Customization
+
+### Using Different PII Detection Models
+
+You can use different Hugging Face models by modifying the `model_name` parameter in the `PIIDetector` initialization:
+
+```python
+# Use a different model
+pii_detector = PIIDetector(model_name="your-preferred-model")
 ```
 
+### Adjusting Detection Sensitivity
+
+The detection threshold can be adjusted in the `filter_text` method call:
+
+```python
+# More strict (lower threshold catches more potential PII)
+is_safe, message_content, detected_entities = pii_detector.filter_text(user_input, threshold=0.6)
+
+# More lenient (higher threshold allows more through)
+is_safe, message_content, detected_entities = pii_detector.filter_text(user_input, threshold=0.9)
+```
+
+## Architecture
+
+1. User inputs are sent to the Chainlit interface
+2. PII detector checks for sensitive information
+3. If PII is detected, the message is rejected with feedback
+4. If safe, the message is processed by the RAG system
+5. Responses are generated using either AWS Bedrock or OpenAI models
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 
