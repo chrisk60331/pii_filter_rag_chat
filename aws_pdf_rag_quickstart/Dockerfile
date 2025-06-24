@@ -13,6 +13,7 @@ RUN mkdir -p ${FUNCTION_DIR}
 RUN pip install --no-cache-dir uv
 
 # Copy project files
+COPY STREAMLIT_README.md ${FUNCTION_DIR}/
 COPY pyproject.toml README.md ${FUNCTION_DIR}/
 # Create directory structure and copy source files properly
 RUN mkdir -p ${FUNCTION_DIR}/src/aws_rag_quickstart
@@ -21,8 +22,8 @@ RUN touch ${FUNCTION_DIR}/src/aws_rag_quickstart/__init__.py
 RUN uv venv
 RUN uv pip install -e .
 
-# Install chainlit and required dependencies using pip for better PATH integration
-RUN uv pip install --no-cache-dir chainlit>=0.7.0 transformers>=4.36.0 torch>=2.1.0
+# Install streamlit and required dependencies using uv
+RUN uv pip install --no-cache-dir streamlit>=1.28.0 transformers>=4.36.0 torch>=2.1.0
 
 
 FROM build-image as local-stack-setup
@@ -85,7 +86,7 @@ ENTRYPOINT [ "/usr/local/bin/python", "-m", "awslambdaric" ]
 # Pass the name of the function handler as an argument to the runtime
 CMD [ "src.aws_rag_quickstart.IngestionLambda.main" ]
 
-FROM build-image as ecsopensearch
+FROM build-image as streamlit
 
 # Include global arg in this stage of the build
 ARG FUNCTION_DIR
@@ -94,9 +95,9 @@ RUN apt-get install -y curl poppler-utils
 # Copy in the built dependencies
 COPY --from=build-image ${FUNCTION_DIR} ${FUNCTION_DIR}
 
-# Copy Chainlit app and configuration
-COPY chainlit_app.py ${FUNCTION_DIR}/
-COPY chainlit.md ${FUNCTION_DIR}/
+# Copy Streamlit app and configuration
+COPY streamlit_app.py ${FUNCTION_DIR}/
+COPY run_streamlit.py ${FUNCTION_DIR}/
 
 # Install local package
 WORKDIR ${FUNCTION_DIR}
@@ -110,11 +111,11 @@ ENV PYTHONPATH=${FUNCTION_DIR}:${PYTHONPATH}
 RUN mkdir -p /tmp
 RUN chmod 777 /tmp
 
-# Expose port for Chainlit
-EXPOSE 80
+# Expose port for Streamlit
+EXPOSE 8501
 
 # Pass the name of the function handler as an argument to the runtime
-CMD [ "uv", "run", "python", "-m", "chainlit", "run", "chainlit_app.py", "--host", "0.0.0.0", "--port", "80" ]
+CMD [ "uv", "run", "streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--server.fileWatcherType=none" ]
 
 FROM build-image as ollamallm
 RUN apt-get update -y

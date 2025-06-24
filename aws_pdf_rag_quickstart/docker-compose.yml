@@ -45,7 +45,7 @@ services:
     depends_on:
       local-stack:
         condition: service_healthy
-      chainlit_app:
+      streamlit_app:
         condition: service_healthy
     networks:
       - opensearch-net
@@ -54,15 +54,15 @@ services:
     profiles:
       - default
       - ollama
-  chainlit_app:
-    container_name: chainlit_app
+  streamlit_app:
+    container_name: streamlit_app
     build:
       context: .
-      target: ecsopensearch
+      target: streamlit
     ports:
-      - "80:80"
+      - "8501:8501"
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:80" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8501" ]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -84,7 +84,7 @@ services:
       - default
       - ollama
   opensearch-node:
-    image: opensearchproject/opensearch:latest
+    image: opensearchproject/opensearch:2.11.1
     container_name: opensearch-node
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9200" ]
@@ -99,6 +99,7 @@ services:
       - "DISABLE_INSTALL_DEMO_CONFIG=true"
       - "DISABLE_SECURITY_PLUGIN=true"
       - "discovery.type=single-node"
+      - "OPENSEARCH_INITIAL_ADMIN_PASSWORD=myStrongPassword123!"
     ulimits:
       memlock:
         soft: -1

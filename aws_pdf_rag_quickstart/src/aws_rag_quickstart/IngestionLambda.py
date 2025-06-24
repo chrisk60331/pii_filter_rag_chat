@@ -164,7 +164,7 @@ def process_file(
 
 def main(event: Dict[str, Any], *args: Any, **kwargs: Any) -> int:
     logging.info(f"Starting ingestion process for event: {event}")
-    metadata_llm = ChatLLM().llm
+    metadata_llm = ChatLLM(model_id=event["model_id"] or os.getenv("MODEL_ID")).llm
     os_embeddings = Embeddings()
     os_client = get_opensearch_connection(os.getenv("AOSS_HOST"), os.getenv("AOSS_PORT"))
 
@@ -177,7 +177,7 @@ def main(event: Dict[str, Any], *args: Any, **kwargs: Any) -> int:
     
     # process input pdf
     num_pages_processed, pii_stats = process_file(
-        event, metadata_llm, os_client, OS_INDEX_NAME, os_embeddings
+        event, metadata_llm, os_client, os.getenv("INDEX_NAME"), os_embeddings
     )
 
     logging.info(f"Ingestion completed: {num_pages_processed} pages processed")

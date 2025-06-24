@@ -56,7 +56,8 @@ def create_index_opensearch(
     Create a new index in OpenSearch.
     """
     try:
-        mapping = {
+        # First try with k-NN vector support (if plugin is available)
+        mapping_with_knn = {
             "mappings": {
                 "properties": {
                     "text_embedding": {"type": "knn_vector", "dimension": 1536},
@@ -74,8 +75,32 @@ def create_index_opensearch(
                 },
             },
         }
-        response = client.indices.create(index=index_name, body=mapping)
-        logging.info(f"Index {index_name} created: {response}")
+        
+        try:
+            response = client.indices.create(index=index_name, body=mapping_with_knn)
+            logging.info(f"Index {index_name} created with k-NN support: {response}")
+            return
+        except Exception as knn_error:
+            logging.warning(f"Failed to create index with k-NN support: {knn_error}")
+            logging.info("Falling back to dense_vector type...")
+        
+        # Fallback: Create index without k-NN plugin (use dense_vector)
+        mapping_fallback = {
+            "mappings": {
+                "properties": {
+                    "text_embedding": {"type": "dense_vector", "dims": 1536},
+                    # Add all potential fields for metadata
+                    "unique_id": {"type": "keyword"},
+                    "file_path": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                    "page_number": {"type": "keyword"},
+                    "llm_generated": {"type": "text"},
+                }
+            },
+        }
+        
+        response = client.indices.create(index=index_name, body=mapping_fallback)
+        logging.info(f"Index {index_name} created with dense_vector fallback: {response}")
+        
     except Exception as e:
         logging.error(f"Error creating index: {e}")
         raise
@@ -108,9 +133,9 @@ def insert_document_opensearch(
                 
         except Exception as embed_error:
             logging.warning(f"Error generating embedding: {embed_error}")
-            # Create a default embedding with the correct dimensionality (768 as defined in create_index_opensearch)
-            embedding = [0.0] * 768  # Using 768 to match the index definition
-            logging.warning("Using fallback zero embedding with dimension 768")
+            # Create a default embedding with the correct dimensionality (1536 as defined in create_index_opensearch)
+            embedding = [0.0] * 1536  # Using 1536 to match the index definition
+            logging.warning("Using fallback zero embedding with dimension 1536")
         
         # Add embedding to the document
         data["text_embedding"] = embedding
@@ -149,8 +174,8 @@ def query_opensearch_with_score(
         embeddings = Embeddings()
         query_embedding = embeddings.embed_query(query_text)
         
-        # Build KNN query
-        query = {
+        # First try k-NN query (if supported)
+        knn_query = {
             "query": {
                 "bool": {
                     "must": [
@@ -168,15 +193,34 @@ def query_opensearch_with_score(
             "size": k
         }
         
-        # Add additional query criteria if provided
+        # Fallback: Use script_score query for dense_vector
+        fallback_query = {
+            "query": {
+                "script_score": {
+                    "query": {"match_all": {}},
+                    "script": {
+                        "source": "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
+                        "params": {"query_vector": query_embedding}
+                    }
+                }
+            },
+            "size": k
+        }
+        
+        # Add additional query criteria if provided (for k-NN query)
         if additional_query:
             for key, value in additional_query.items():
-                query["query"]["bool"][key] = value
+                knn_query["query"]["bool"][key] = value
                 
-        logger.debug(f"Executing OpenSearch query: {query}")
+        logger.debug(f"Executing OpenSearch query: {knn_query}")
         
-        # Execute search
-        response = client.search(index=index_name, body=query)
+        # Execute search - try k-NN first, fall back to script_score
+        try:
+            response = client.search(index=index_name, body=knn_query)
+        except Exception as knn_error:
+            logger.warning(f"k-NN query failed: {knn_error}, falling back to script_score")
+            logger.debug(f"Executing fallback query: {fallback_query}")
+            response = client.search(index=index_name, body=fallback_query)
         
         # Process results
         hits = response.get("hits", {}).get("hits", [])
